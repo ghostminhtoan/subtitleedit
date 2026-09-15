@@ -104,6 +104,7 @@ public class LanguageMainMenu
     public string AudioTracks { get; set; }
     public string SpeechToText { get; set; }
     public string TextToSpeech { get; set; }
+    public string TextToSpeechMultiSpeakers { get; set; }
     public string VideoOcr { get; set; }
     public string SetVideoOffset { get; set; }
     public string UpdateVideoOffsetX { get; set; }
@@ -248,6 +249,7 @@ public class LanguageMainMenu
         AudioTracks = "_Audio tracks";
         SpeechToText = "_Speech to text...";
         TextToSpeech = "_Text to speech...";
+        TextToSpeechMultiSpeakers = "Text to speech (multi speakers)...";
         VideoOcr = "OCR burned-i_n subtitle...";
         UndockVideoControls = "_Undock video controls";
         ListShotChanges = "List s_hot changes...";

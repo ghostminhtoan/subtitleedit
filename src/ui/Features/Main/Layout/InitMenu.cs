@@ -765,6 +765,11 @@ public static class InitMenu
                 },
                 new MenuItem
                 {
+                    Header = l.TextToSpeechMultiSpeakers,
+                    Command = vm.ShowVideoTextToSpeechMultiSpeakersCommand,
+                },
+                new MenuItem
+                {
                     Header = Se.Language.Video.TextToSpeech.VoiceManagerMenuItem,
                     Command = vm.ShowVideoVoiceManagerCommand,
                 },

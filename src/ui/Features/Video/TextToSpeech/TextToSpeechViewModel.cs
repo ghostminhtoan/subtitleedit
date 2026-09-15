@@ -118,6 +118,26 @@ public partial class TextToSpeechViewModel : ObservableObject
     [ObservableProperty] private bool _omniVoiceWhisper;
     [ObservableProperty] private bool _hasCast;
     [ObservableProperty] private string _castButtonText;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActorVoicesPanelVisible))]
+    private bool _isMultiSpeakerMode;
+    [ObservableProperty] private bool _useActorVoices;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActorVoicesPanelVisible))]
+    private bool _isActorVoicesAvailable;
+    [ObservableProperty] private bool _isActorVoicesEnabled;
+    [ObservableProperty] private string _actorVoicesOptionText = string.Empty;
+
+    public bool IsActorVoicesPanelVisible => IsMultiSpeakerMode && IsActorVoicesAvailable;
+
+    partial void OnUseActorVoicesChanged(bool value)
+    {
+        Se.Settings.Video.TextToSpeech.UseActorVoices = value;
+        if (value && HasCast && _actorVoiceMappings.Count == 0 && Window != null)
+        {
+            Dispatcher.UIThread.Post(async () => await ShowCast());
+        }
+    }
 
     // Per-actor (ASSA) or per-voice (WebVTT) mappings the user has configured via the Cast
     // dialog. When empty, every paragraph falls back to the global SelectedEngine/SelectedVoice.
@@ -986,8 +1006,10 @@ public partial class TextToSpeechViewModel : ObservableObject
         string videoFileName,
         WavePeakData2? wavePeakData,
         string waveFolder,
-        Subtitle? originalSubtitle = null)
+        Subtitle? originalSubtitle = null,
+        bool isMultiSpeakerMode = false)
     {
+        IsMultiSpeakerMode = isMultiSpeakerMode;
         _subtitle = subtitle;
         _subtitle.RemoveEmptyLines();
         _originalSubtitle = originalSubtitle;
@@ -1022,7 +1044,8 @@ public partial class TextToSpeechViewModel : ObservableObject
         // fallback base - a configured generation folder wins.
         _waveFolder = TtsRunFolder.Create(waveFolder);
 
-        RefreshCast(ActorVoiceDetector.Detect(subtitle, format), subtitle);
+        UseActorVoices = IsMultiSpeakerMode ? true : Se.Settings.Video.TextToSpeech.UseActorVoices;
+        RefreshCast(ActorVoiceDetector.Detect(subtitle, format), subtitle, format);
     }
 
     /// <summary>
@@ -1030,18 +1053,23 @@ public partial class TextToSpeechViewModel : ObservableObject
     /// Called at window setup, and again when the detect-speakers prompt writes actors into the
     /// working subtitle mid-flow.
     /// </summary>
-    private void RefreshCast(ActorVoiceDetector.CastKind castKind, Subtitle subtitle)
+    private void RefreshCast(ActorVoiceDetector.CastKind castKind, Subtitle subtitle, SubtitleFormat? format = null)
     {
         _castKind = castKind;
-        // Only surface the cast button when there's actually more than one actor/voice to assign
-        // — a single-speaker subtitle uses the global engine/voice and the button would be a no-op.
+        var isSupported = ActorVoiceDetector.IsActorSupportedFormat(format) || _castKind != ActorVoiceDetector.CastKind.None;
         var actorCount = _castKind == ActorVoiceDetector.CastKind.None
             ? 0
             : ActorVoiceDetector.GetNames(subtitle, _castKind).Count;
-        HasCast = actorCount > 1;
+        HasCast = actorCount >= 1;
         CastButtonText = HasCast
             ? string.Format("{0} ({1})", Se.Language.Video.TextToSpeech.SetupCast.TrimEnd('.'), actorCount)
             : Se.Language.Video.TextToSpeech.SetupCast;
+
+        IsActorVoicesAvailable = isSupported;
+        IsActorVoicesEnabled = actorCount >= 1;
+        ActorVoicesOptionText = actorCount > 0
+            ? string.Format("{0} ({1})", Se.Language.Video.TextToSpeech.UseActorVoices, actorCount)
+            : string.Format("{0} (0)", Se.Language.Video.TextToSpeech.UseActorVoices);
 
         // Seed from last session's persisted cast so users don't have to re-assign every time
         // they open the same set of actors. The Cast dialog merges fresh edits back on save.
@@ -1100,20 +1128,20 @@ public partial class TextToSpeechViewModel : ObservableObject
     [RelayCommand]
     private async Task ShowCast()
     {
-        if (Window == null || !HasCast)
+        if (Window == null)
         {
             return;
         }
 
         var actorNames = ActorVoiceDetector.GetNames(_subtitle, _castKind);
-        if (actorNames.Count == 0 && Window != null)
+        if (actorNames.Count == 0)
         {
             await MessageBox.Show(
                 Window,
                 Se.Language.Video.TextToSpeech.ActorVoicesTitle,
-                _castKind == ActorVoiceDetector.CastKind.AssaActors
-                    ? Se.Language.Video.TextToSpeech.NoActorsFoundMessage
-                    : Se.Language.Video.TextToSpeech.NoWebVttVoicesFoundMessage,
+                _castKind == ActorVoiceDetector.CastKind.WebVttVoices
+                    ? Se.Language.Video.TextToSpeech.NoWebVttVoicesFoundMessage
+                    : Se.Language.Video.TextToSpeech.NoActorsFoundMessage,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
@@ -1133,6 +1161,9 @@ public partial class TextToSpeechViewModel : ObservableObject
         {
             _actorVoiceMappings.Clear();
             _actorVoiceMappings.AddRange(result.Mappings);
+            UseActorVoices = true;
+            Se.Settings.Video.TextToSpeech.LastActorVoiceMappings = _actorVoiceMappings.ToList();
+            Se.SaveSettings();
         }
     }
 
@@ -1309,6 +1340,7 @@ public partial class TextToSpeechViewModel : ObservableObject
         // Straight into voice assignment - the whole point of confirming the speakers.
         if (HasCast)
         {
+            UseActorVoices = true;
             await ShowCast();
         }
     }
@@ -2208,6 +2240,7 @@ public partial class TextToSpeechViewModel : ObservableObject
         {
             _actorVoiceMappings.Clear();
             _actorVoiceMappings.AddRange(importExport.ActorVoiceMappings);
+            UseActorVoices = true;
         }
 
         // Resolve each line's Voice against the engine that *generated* it (per-line
@@ -2271,6 +2304,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                 EngineName = item.EngineName ?? string.Empty,
                 Model = item.Model ?? string.Empty,
                 Instruction = item.Instruction ?? string.Empty,
+                Language = item.Language ?? string.Empty,
                 Include = item.Include,
             });
         }
@@ -2321,10 +2355,14 @@ public partial class TextToSpeechViewModel : ObservableObject
                 // wavs on every regenerate (#12093). The run folder the fresh Generate flow uses,
                 // so these intermediates get swept on close like the rest (#13332).
                 _waveFolder,
-                peaksForReview);
+                peaksForReview,
+                isMultiSpeakerMode: IsMultiSpeakerMode);
             // Forward the imported cast so a subsequent Export round-trips the mappings instead
             // of writing ActorVoiceMappings = [] back to SubtitleEditTts.json.
-            vm.ActorVoiceMappings.AddRange(_actorVoiceMappings);
+            if (UseActorVoices)
+            {
+                vm.ActorVoiceMappings.AddRange(_actorVoiceMappings);
+            }
             vm.SubtitleFileName = GetLoadedSubtitleFileName();
             // So a regenerate that has to cut its own reference clip transcribes it with what the
             // video says, not with the translation being dubbed over it.
@@ -3083,6 +3121,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                     // Avoids snapshotting a global model that belongs to a different engine.
                     Model = model ?? string.Empty,
                     Instruction = resolution.Instruction,
+                    Language = language?.Name ?? SelectedLanguage?.Name ?? string.Empty,
                 });
                 ProgressValue = (double)(index + 1) / _subtitle.Paragraphs.Count * 100.0;
 
@@ -3309,7 +3348,7 @@ public partial class TextToSpeechViewModel : ObservableObject
     private async Task<CastContext> BuildCastContextAsync()
     {
         var ctx = new CastContext();
-        if (_actorVoiceMappings.Count == 0 || _castKind == ActorVoiceDetector.CastKind.None)
+        if (!UseActorVoices || _actorVoiceMappings.Count == 0 || _castKind == ActorVoiceDetector.CastKind.None)
         {
             return ctx;
         }
@@ -3596,7 +3635,10 @@ public partial class TextToSpeechViewModel : ObservableObject
         // A mapped row with no instruction of its own, on the globally selected engine, follows
         // the panel instruction - otherwise mapping an actor to the same engine/voice made that
         // actor's lines drop the voice design every unmapped line gets.
-        var instruction = string.IsNullOrWhiteSpace(mapping.Instruction) && ReferenceEquals(mappedEngine, defaultEngine)
+        // If the voice is "Default", voice design applies by default to all subtitles containing default.
+        var isDefaultVoice = string.Equals(mappedVoice.Name, "Default", StringComparison.OrdinalIgnoreCase)
+            || (mappedVoice.EngineVoice is OmniVoice ov && string.IsNullOrEmpty(ov.FilePath));
+        var instruction = string.IsNullOrWhiteSpace(mapping.Instruction) && (ReferenceEquals(mappedEngine, defaultEngine) || isDefaultVoice)
             ? globalInstruction
             : mapping.Instruction ?? string.Empty;
         return new ResolvedVoice(mappedEngine, mappedVoice, modelOverride, text, instruction);
@@ -3707,6 +3749,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                             EngineName = item.EngineName,
                             Model = item.Model,
                             Instruction = item.Instruction,
+                            Language = item.Language,
                         });
                         continue;
                     }
@@ -3724,6 +3767,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                             EngineName = item.EngineName,
                             Model = item.Model,
                             Instruction = item.Instruction,
+                            Language = item.Language,
                         });
                         continue;
                     }
@@ -3741,6 +3785,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                             EngineName = item.EngineName,
                             Model = item.Model,
                             Instruction = item.Instruction,
+                            Language = item.Language,
                         });
 
                         SeLogger.Error($"TextToSpeech: Duration is zero (skipping): {item.CurrentFileName}, {p}");
@@ -3767,6 +3812,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                         EngineName = item.EngineName,
                         Model = item.Model,
                         Instruction = item.Instruction,
+                        Language = item.Language,
                     });
 
                     // Use rubberband (WSOLA) for high-quality pitch-preserving stretch, or atempo as fallback
@@ -3829,6 +3875,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                             EngineName = item.EngineName,
                             Model = item.Model,
                             Instruction = item.Instruction,
+                            Language = item.Language,
                         });
                     }
                 }
@@ -3924,6 +3971,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                     EngineName = item.EngineName,
                     Model = item.Model,
                     Instruction = item.Instruction,
+                    Language = item.Language,
                 });
 
                 ProgressValue = (double)(index + 1) / previousStepResult.Length * 100.0;
@@ -3993,8 +4041,12 @@ public partial class TextToSpeechViewModel : ObservableObject
                 SelectedLanguage,
                 _videoFileName,
                 _waveFolder,
-                _wavePeakData);
-            vm.ActorVoiceMappings.AddRange(_actorVoiceMappings);
+                _wavePeakData,
+                isMultiSpeakerMode: IsMultiSpeakerMode);
+            if (UseActorVoices)
+            {
+                vm.ActorVoiceMappings.AddRange(_actorVoiceMappings);
+            }
             vm.SubtitleFileName = GetLoadedSubtitleFileName();
             vm.ReferenceTextOf = GetSpokenTextInVideo;
         });

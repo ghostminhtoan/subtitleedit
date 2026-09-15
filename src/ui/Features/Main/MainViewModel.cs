@@ -11288,7 +11288,30 @@ public partial class MainViewModel :
             return;
         }
 
-        await TextToSpeech(GetUpdateSubtitle(), ShowColumnOriginalText ? GetUpdateSubtitleOriginal() : null, null);
+        await TextToSpeech(GetUpdateSubtitle(), ShowColumnOriginalText ? GetUpdateSubtitleOriginal() : null, null, isMultiSpeakerMode: false);
+    }
+
+    [RelayCommand]
+    private async Task ShowVideoTextToSpeechMultiSpeakers()
+    {
+        if (Window == null)
+        {
+            return;
+        }
+
+        if (IsEmpty)
+        {
+            ShowSubtitleNotLoadedMessage();
+            return;
+        }
+
+        var ffmpegOk = await RequireFfmpegOk();
+        if (!ffmpegOk)
+        {
+            return;
+        }
+
+        await TextToSpeech(GetUpdateSubtitle(), ShowColumnOriginalText ? GetUpdateSubtitleOriginal() : null, null, isMultiSpeakerMode: true);
     }
 
     [RelayCommand]
@@ -11326,12 +11349,12 @@ public partial class MainViewModel :
             }
         }
 
-        await TextToSpeech(sub, original, selectedItems);
+        await TextToSpeech(sub, original, selectedItems, isMultiSpeakerMode: false);
         _shortcutManager.ClearKeys();
     }
 
     /// <param name="onlyRows">The rows <paramref name="subtitle"/> was built from, or null for the whole grid.</param>
-    private async Task TextToSpeech(Subtitle subtitle, Subtitle? originalSubtitle, ISet<SubtitleLineViewModel>? onlyRows)
+    private async Task TextToSpeech(Subtitle subtitle, Subtitle? originalSubtitle, ISet<SubtitleLineViewModel>? onlyRows, bool isMultiSpeakerMode = false)
     {
         var result = await ShowDialogAsync<TextToSpeechWindow, TextToSpeechViewModel>(vm =>
         {
@@ -11343,7 +11366,7 @@ public partial class MainViewModel :
             // dubbed - is what is spoken in that clip.
             vm.Initialize(subtitle, SelectedSubtitleFormat,
                 _videoFileName ?? string.Empty, AudioVisualizer?.WavePeaks, Path.GetTempPath(),
-                originalSubtitle);
+                originalSubtitle, isMultiSpeakerMode);
         });
 
         // OK is the consent to apply the session's subtitle changes; Cancel/Escape/title-bar
