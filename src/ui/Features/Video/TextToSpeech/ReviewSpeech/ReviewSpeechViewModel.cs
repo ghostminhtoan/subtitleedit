@@ -2074,8 +2074,173 @@ public partial class ReviewSpeechViewModel : ObservableObject
         };
     }
 
+    public sealed class ReviewSelectionSnapshot
+    {
+        public bool[] Includes { get; init; } = Array.Empty<bool>();
+        public string[] Voices { get; init; } = Array.Empty<string>();
+        public string[] Languages { get; init; } = Array.Empty<string>();
+        public int[] SelectedIndices { get; init; } = Array.Empty<int>();
+        public int SelectedLineNumber { get; init; } = -1;
+    }
+
+    private readonly Stack<ReviewSelectionSnapshot> _undoStack = new();
+    private readonly Stack<ReviewSelectionSnapshot> _redoStack = new();
+    private bool _isApplyingSnapshot;
+
+    public void PushUndoSnapshot()
+    {
+        if (_isApplyingSnapshot || Lines.Count == 0)
+        {
+            return;
+        }
+
+        var snapshot = CaptureSnapshot();
+        _undoStack.Push(snapshot);
+        _redoStack.Clear();
+    }
+
+    private ReviewSelectionSnapshot CaptureSnapshot()
+    {
+        var selectedIndices = new List<int>();
+        if (LineGrid?.Selection != null)
+        {
+            selectedIndices.AddRange(LineGrid.Selection.SelectedIndexes);
+        }
+
+        return new ReviewSelectionSnapshot
+        {
+            Includes = Lines.Select(l => l.Include).ToArray(),
+            Voices = Lines.Select(l => l.Voice ?? string.Empty).ToArray(),
+            Languages = Lines.Select(l => l.Language ?? string.Empty).ToArray(),
+            SelectedIndices = selectedIndices.ToArray(),
+            SelectedLineNumber = SelectedLine?.Number ?? -1,
+        };
+    }
+
+    public bool Undo()
+    {
+        if (_undoStack.Count == 0)
+        {
+            return false;
+        }
+
+        var current = CaptureSnapshot();
+        var previous = _undoStack.Pop();
+        _redoStack.Push(current);
+
+        ApplySnapshot(previous);
+        return true;
+    }
+
+    public bool Redo()
+    {
+        if (_redoStack.Count == 0)
+        {
+            return false;
+        }
+
+        var current = CaptureSnapshot();
+        var next = _redoStack.Pop();
+        _undoStack.Push(current);
+
+        ApplySnapshot(next);
+        return true;
+    }
+
+    private void ApplySnapshot(ReviewSelectionSnapshot snapshot)
+    {
+        _isApplyingSnapshot = true;
+        try
+        {
+            for (var i = 0; i < Lines.Count && i < snapshot.Includes.Length; i++)
+            {
+                var row = Lines[i];
+                row.Include = snapshot.Includes[i];
+
+                if (i < snapshot.Voices.Length && !string.Equals(row.Voice, snapshot.Voices[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    var vName = snapshot.Voices[i];
+                    var vObj = Voices.FirstOrDefault(v => string.Equals(v.Name, vName, StringComparison.OrdinalIgnoreCase));
+                    row.SelectedVoice = vObj;
+                    row.Voice = vName;
+                    if (row.StepResult != null)
+                    {
+                        row.StepResult.Voice = vObj;
+                    }
+                }
+
+                if (i < snapshot.Languages.Length && !string.Equals(row.Language, snapshot.Languages[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    var lName = snapshot.Languages[i];
+                    var lObj = Languages.FirstOrDefault(l => string.Equals(l.Name, lName, StringComparison.OrdinalIgnoreCase) || string.Equals(l.Code, lName, StringComparison.OrdinalIgnoreCase));
+                    row.SelectedLanguage = lObj;
+                    row.Language = lName;
+                    if (row.StepResult != null)
+                    {
+                        row.StepResult.Language = lName;
+                    }
+                }
+            }
+
+            if (LineGrid?.Selection != null)
+            {
+                LineGrid.Selection.BeginBatchUpdate();
+                try
+                {
+                    LineGrid.Selection.Clear();
+                    foreach (var idx in snapshot.SelectedIndices)
+                    {
+                        if (idx >= 0 && idx < Lines.Count)
+                        {
+                            LineGrid.Selection.Select(idx);
+                        }
+                    }
+                }
+                finally
+                {
+                    LineGrid.Selection.EndBatchUpdate();
+                }
+                TableViewExtras.SyncSelectedItemsWithSelection(LineGrid);
+            }
+
+            if (snapshot.SelectedLineNumber >= 0)
+            {
+                SelectedLine = Lines.FirstOrDefault(l => l.Number == snapshot.SelectedLineNumber) ?? SelectedLine;
+            }
+        }
+        finally
+        {
+            _isApplyingSnapshot = false;
+        }
+    }
+
     internal void OnKeyDown(KeyEventArgs e)
     {
+        var isTextBoxFocused = (Window?.FocusManager?.GetFocusedElement() is TextBox) || e.Source is TextBox;
+        if (!isTextBoxFocused)
+        {
+            var isCtrlOrCmd = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+            if (isCtrlOrCmd)
+            {
+                if (e.Key == Key.Z && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                {
+                    if (Undo())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else if (e.Key == Key.Y || (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+                {
+                    if (Redo())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+        }
+
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
@@ -2110,7 +2275,31 @@ public partial class ReviewSpeechViewModel : ObservableObject
     {
         // A modifier-less key must still type into a focused text box; with modifiers held the
         // shortcut works everywhere.
-        var isTextBoxFocused = Window?.FocusManager?.GetFocusedElement() is TextBox;
+        var isTextBoxFocused = (Window?.FocusManager?.GetFocusedElement() is TextBox) || e.Source is TextBox;
+
+        if (!isTextBoxFocused)
+        {
+            var isCtrlOrCmd = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+            if (isCtrlOrCmd)
+            {
+                if (e.Key == Key.Z && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                {
+                    if (Undo())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else if (e.Key == Key.Y || (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+                {
+                    if (Redo())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+        }
 
         if (MatchesPlayPauseShortcut(e))
         {
@@ -2459,6 +2648,8 @@ public partial class ReviewSpeechViewModel : ObservableObject
             return;
         }
 
+        PushUndoSnapshot();
+
         foreach (var row in rows)
         {
             row.Voice = voice.ToString();
@@ -2497,6 +2688,8 @@ public partial class ReviewSpeechViewModel : ObservableObject
         {
             return;
         }
+
+        PushUndoSnapshot();
 
         foreach (var row in rows)
         {

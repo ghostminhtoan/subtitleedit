@@ -319,6 +319,18 @@ public class ReviewSpeechWindow : Window
                     [!ToggleButton.IsCheckedProperty] = new Binding(nameof(ReviewRow.Include)),
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
+                checkBox.AddHandler(InputElement.PointerPressedEvent, (_, _) =>
+                {
+                    vm.PushUndoSnapshot();
+                }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+                checkBox.AddHandler(InputElement.KeyDownEvent, (_, ke) =>
+                {
+                    if (ke.Key == Key.Space)
+                    {
+                        vm.PushUndoSnapshot();
+                    }
+                }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
                 var border = new Border
                 {
                     Padding = new Thickness(4),
@@ -1072,10 +1084,143 @@ public class ReviewSpeechWindow : Window
         return new List<ReviewRow>();
     }
 
+    private static MenuItem MakeSearchableSubMenu<T>(
+        string header,
+        IReadOnlyList<T> items,
+        Func<T, string> getName,
+        Func<T, bool> isSelected,
+        Action<T> onSelect,
+        MenuFlyout rootFlyout,
+        string watermark,
+        bool isEnabled)
+    {
+        var parentMenu = new MenuItem
+        {
+            Header = header,
+            IsEnabled = isEnabled,
+        };
+
+        if (!isEnabled || items.Count == 0)
+        {
+            return parentMenu;
+        }
+
+        var searchBox = new TextBox
+        {
+            PlaceholderText = watermark,
+            Margin = new Thickness(4, 2, 4, 4),
+        };
+
+        var itemsPanel = new StackPanel();
+        var menuItems = new List<(T Item, MenuItem MenuItem, string Name)>(items.Count);
+
+        foreach (var item in items)
+        {
+            var targetItem = item;
+            var name = getName(targetItem);
+            var menuItem = new MenuItem
+            {
+                Header = name,
+            };
+            if (isSelected(targetItem))
+            {
+                menuItem.Icon = new Icon { Value = IconNames.Check, FontSize = 12 };
+            }
+            menuItem.Click += (_, _) =>
+            {
+                onSelect(targetItem);
+                rootFlyout.Hide();
+            };
+            itemsPanel.Children.Add(menuItem);
+            menuItems.Add((targetItem, menuItem, name));
+        }
+
+        searchBox.TextChanged += (_, _) =>
+        {
+            var filter = searchBox.Text?.Trim() ?? string.Empty;
+            foreach (var (_, mi, name) in menuItems)
+            {
+                mi.IsVisible = string.IsNullOrEmpty(filter) || name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            }
+        };
+
+        searchBox.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter)
+            {
+                ke.Handled = true;
+                var first = menuItems.FirstOrDefault(m => m.MenuItem.IsVisible);
+                if (first.MenuItem != null)
+                {
+                    onSelect(first.Item);
+                    rootFlyout.Hide();
+                }
+            }
+            else if (ke.Key == Key.Escape)
+            {
+                ke.Handled = true;
+                rootFlyout.Hide();
+            }
+        };
+
+        var scrollViewer = new ScrollViewer
+        {
+            MaxHeight = 350,
+            Width = 270,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = itemsPanel,
+        };
+
+        var contentGrid = new Grid
+        {
+            Width = 270,
+            RowDefinitions =
+            {
+                new RowDefinition { Height = GridLength.Auto },
+                new RowDefinition { Height = GridLength.Auto },
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) },
+            },
+            Children =
+            {
+                searchBox,
+                new Separator { Margin = new Thickness(0, 2) },
+                scrollViewer,
+            }
+        };
+        Grid.SetRow(searchBox, 0);
+        Grid.SetRow((Control)contentGrid.Children[1], 1);
+        Grid.SetRow(scrollViewer, 2);
+
+        var containerItem = new MenuItem
+        {
+            Template = new FuncControlTemplate<MenuItem>((_, _) => contentGrid),
+            Focusable = false,
+        };
+
+        parentMenu.Items.Add(containerItem);
+
+        parentMenu.SubmenuOpened += (_, _) =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                searchBox.Focus();
+                searchBox.SelectAll();
+            }, Avalonia.Threading.DispatcherPriority.Input);
+        };
+
+        return parentMenu;
+    }
+
     private static void SyncGridSelectionFromIncluded(TableView lineGrid, ReviewSpeechViewModel vm)
     {
-        lineGrid.Selection.BeginBatchUpdate();
+        if (lineGrid?.Selection == null)
+        {
+            return;
+        }
+
         var firstIncluded = -1;
+        lineGrid.Selection.BeginBatchUpdate();
         try
         {
             lineGrid.Selection.Clear();
@@ -1126,54 +1271,34 @@ public class ReviewSpeechWindow : Window
 
         var selectedRows = GetTargetRows(lineGrid, vm);
 
-        var voiceMenu = new MenuItem
-        {
-            Header = Se.Language.General.Voice,
-            IsEnabled = vm.Voices.Count > 0 && selectedRows.Count > 0,
-        };
-        foreach (var voice in vm.Voices)
-        {
-            var targetVoice = voice;
-            var voiceItem = new MenuItem
-            {
-                Header = targetVoice.Name,
-            };
-            if (selectedRows.Count > 0 && selectedRows.All(r => r.SelectedVoice == targetVoice || string.Equals(r.Voice, targetVoice.Name, StringComparison.OrdinalIgnoreCase)))
-            {
-                voiceItem.Icon = new Icon { Value = IconNames.Check, FontSize = 12 };
-            }
-            voiceItem.Click += (_, _) =>
+        var voiceMenu = MakeSearchableSubMenu(
+            Se.Language.General.Voice,
+            vm.Voices,
+            v => v.Name,
+            v => selectedRows.Count > 0 && selectedRows.All(r => r.SelectedVoice == v || string.Equals(r.Voice, v.Name, StringComparison.OrdinalIgnoreCase)),
+            targetVoice =>
             {
                 var rows = GetTargetRows(lineGrid, vm);
                 vm.ChangeVoiceForRows(rows, targetVoice);
-            };
-            voiceMenu.Items.Add(voiceItem);
-        }
+            },
+            flyout,
+            Se.Language.Video.TextToSpeech.SearchVoices,
+            vm.Voices.Count > 0 && selectedRows.Count > 0);
         flyout.Items.Add(voiceMenu);
 
-        var langMenu = new MenuItem
-        {
-            Header = Se.Language.General.Language,
-            IsEnabled = vm.Languages.Count > 0 && selectedRows.Count > 0,
-        };
-        foreach (var lang in vm.Languages)
-        {
-            var targetLang = lang;
-            var langItem = new MenuItem
-            {
-                Header = targetLang.Name,
-            };
-            if (selectedRows.Count > 0 && selectedRows.All(r => r.SelectedLanguage == targetLang || string.Equals(r.Language, targetLang.Name, StringComparison.OrdinalIgnoreCase) || string.Equals(r.Language, targetLang.Code, StringComparison.OrdinalIgnoreCase)))
-            {
-                langItem.Icon = new Icon { Value = IconNames.Check, FontSize = 12 };
-            }
-            langItem.Click += (_, _) =>
+        var langMenu = MakeSearchableSubMenu(
+            Se.Language.General.Language,
+            vm.Languages,
+            l => l.Name,
+            l => selectedRows.Count > 0 && selectedRows.All(r => r.SelectedLanguage == l || string.Equals(r.Language, l.Name, StringComparison.OrdinalIgnoreCase) || string.Equals(r.Language, l.Code, StringComparison.OrdinalIgnoreCase)),
+            targetLang =>
             {
                 var rows = GetTargetRows(lineGrid, vm);
                 vm.ChangeLanguageForRows(rows, targetLang);
-            };
-            langMenu.Items.Add(langItem);
-        }
+            },
+            flyout,
+            Se.Language.Video.TextToSpeech.SearchLanguages,
+            vm.Languages.Count > 0 && selectedRows.Count > 0);
         flyout.Items.Add(langMenu);
 
         flyout.Items.Add(new Separator());
@@ -1186,6 +1311,7 @@ public class ReviewSpeechWindow : Window
             };
             itemCheckSelected.Click += (_, _) =>
             {
+                vm.PushUndoSnapshot();
                 foreach (var r in selectedRows)
                 {
                     r.Include = true;
@@ -1200,6 +1326,7 @@ public class ReviewSpeechWindow : Window
             };
             itemUncheckSelected.Click += (_, _) =>
             {
+                vm.PushUndoSnapshot();
                 foreach (var r in selectedRows)
                 {
                     r.Include = false;
@@ -1217,6 +1344,7 @@ public class ReviewSpeechWindow : Window
         };
         itemSelectAll.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = true;
@@ -1231,6 +1359,7 @@ public class ReviewSpeechWindow : Window
         };
         itemSelectNone.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = false;
@@ -1245,6 +1374,7 @@ public class ReviewSpeechWindow : Window
         };
         itemInvert.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = !line.Include;
@@ -1272,6 +1402,7 @@ public class ReviewSpeechWindow : Window
                 };
                 actorItem.Click += (_, _) =>
                 {
+                    vm.PushUndoSnapshot();
                     foreach (var line in vm.Lines)
                     {
                         var a = !string.IsNullOrWhiteSpace(line.Actor) ? line.Actor : (line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor);
@@ -1303,6 +1434,7 @@ public class ReviewSpeechWindow : Window
         };
         itemSelectAll.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = true;
@@ -1317,6 +1449,7 @@ public class ReviewSpeechWindow : Window
         };
         itemSelectNone.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = false;
@@ -1331,6 +1464,7 @@ public class ReviewSpeechWindow : Window
         };
         itemInvert.Click += (_, _) =>
         {
+            vm.PushUndoSnapshot();
             foreach (var line in vm.Lines)
             {
                 line.Include = !line.Include;
@@ -1358,6 +1492,7 @@ public class ReviewSpeechWindow : Window
                 };
                 actorItem.Click += (_, _) =>
                 {
+                    vm.PushUndoSnapshot();
                     foreach (var line in vm.Lines)
                     {
                         var a = !string.IsNullOrWhiteSpace(line.Actor) ? line.Actor : (line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor);

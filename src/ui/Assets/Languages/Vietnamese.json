@@ -2528,6 +2528,8 @@
       "importVoiceDotDotDot": "Nhập giọng nói...",
       "voiceImportSuccessTitle": "Đã nhập giọng nói",
       "voiceXImported": "Đã nhập giọng nói '{0}' thành công",
+      "searchVoices": "Tìm kiếm giọng đọc",
+      "searchLanguages": "Tìm kiếm ngôn ngữ",
       "voiceXCouldNotBeImported": "Không thể nhập giọng '{0}' - xem nhật ký để biết chi tiết",
       "importPiperVoiceTitle": "Mở mô hình giọng Piper (.onnx)",
       "piperVoiceConfigMissingTitle": "Thiếu tệp cấu hình",

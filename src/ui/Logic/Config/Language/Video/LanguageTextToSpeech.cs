@@ -67,6 +67,7 @@ public class LanguageTextToSpeech
     public string TranscriptOptionalHint { get; set; }
     public string SaveTranscript { get; set; }
     public string SearchVoices { get; set; }
+    public string SearchLanguages { get; set; }
     public string LoadingVoicesDotDotDot { get; set; }
     public string NoVoicesForEngine { get; set; }
     public string NoVoicesMatchFilter { get; set; }
@@ -276,6 +277,7 @@ public class LanguageTextToSpeech
         TranscriptOptionalHint = "Optional - an accurate transcript of the recording improves cloning";
         SaveTranscript = "Save transcript";
         SearchVoices = "Search voices";
+        SearchLanguages = "Search languages";
         LoadingVoicesDotDotDot = "Loading voices...";
         NoVoicesForEngine = "No voices - import a recording or download a voice pack";
         NoVoicesMatchFilter = "No voices match the search";

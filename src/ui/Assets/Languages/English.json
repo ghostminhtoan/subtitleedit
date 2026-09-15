@@ -2419,6 +2419,7 @@
       "transcriptOptionalHint": "Optional - an accurate transcript of the recording improves cloning",
       "saveTranscript": "Save transcript",
       "searchVoices": "Search voices",
+      "searchLanguages": "Search languages",
       "loadingVoicesDotDotDot": "Loading voices...",
       "noVoicesForEngine": "No voices - import a recording or download a voice pack",
       "noVoicesMatchFilter": "No voices match the search",
