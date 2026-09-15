@@ -321,7 +321,6 @@ public class ReviewSpeechWindow : Window
                 };
                 var border = new Border
                 {
-                    Background = Brushes.Transparent, // Prevents highlighting
                     Padding = new Thickness(4),
                     Child = checkBox
                 };
@@ -395,26 +394,8 @@ public class ReviewSpeechWindow : Window
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
         });
 
-        var hasActors = vm.Lines.Any(l => !string.IsNullOrWhiteSpace(l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor));
-        if (!hasActors)
-        {
-            lineGrid.Columns.Add(new SeTableViewColumn
-            {
-                Header = Se.Language.General.Voice,
-                Binding = new Binding(nameof(ReviewRow.Voice)),
-                Width = new GridLength(140),
-                CellTheme = UiUtil.TableViewCellTheme,
-                HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
-            });
-            lineGrid.Columns.Add(new SeTableViewColumn
-            {
-                Header = Se.Language.General.Language,
-                Binding = new Binding(nameof(ReviewRow.Language)),
-                Width = new GridLength(100),
-                CellTheme = UiUtil.TableViewCellTheme,
-                HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
-            });
-        }
+        var hasActors = vm.Lines.Any(l => !string.IsNullOrWhiteSpace(l.Actor) || !string.IsNullOrWhiteSpace(l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor));
+
         lineGrid.Columns.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.CharsPerSec,
@@ -443,22 +424,29 @@ public class ReviewSpeechWindow : Window
         {
             lineGrid.Columns.Add(new SeTableViewColumn
             {
-                Header = Se.Language.General.Voice,
-                Binding = new Binding(nameof(ReviewRow.Voice)),
-                Width = new GridLength(140),
-                CellTheme = UiUtil.TableViewCellTheme,
-                HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
-            });
-
-            lineGrid.Columns.Add(new SeTableViewColumn
-            {
-                Header = Se.Language.General.Language,
-                Binding = new Binding(nameof(ReviewRow.Language)),
+                Header = Se.Language.General.Actor,
+                Binding = new Binding(nameof(ReviewRow.Actor)),
                 Width = new GridLength(100),
                 CellTheme = UiUtil.TableViewCellTheme,
                 HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
             });
         }
+        lineGrid.Columns.Add(new SeTableViewColumn
+        {
+            Header = Se.Language.General.Voice,
+            Binding = new Binding(nameof(ReviewRow.Voice)),
+            Width = new GridLength(140),
+            CellTheme = UiUtil.TableViewCellTheme,
+            HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
+        });
+        lineGrid.Columns.Add(new SeTableViewColumn
+        {
+            Header = Se.Language.General.Language,
+            Binding = new Binding(nameof(ReviewRow.Language)),
+            Width = new GridLength(100),
+            CellTheme = UiUtil.TableViewCellTheme,
+            HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
+        });
         lineGrid.DoubleTapped += (s, e) => vm.LineGridDoubleClicked();
         vm.LineGrid = lineGrid;
 
@@ -1084,6 +1072,54 @@ public class ReviewSpeechWindow : Window
         return new List<ReviewRow>();
     }
 
+    private static void SyncGridSelectionFromIncluded(TableView lineGrid, ReviewSpeechViewModel vm)
+    {
+        lineGrid.Selection.BeginBatchUpdate();
+        var firstIncluded = -1;
+        try
+        {
+            lineGrid.Selection.Clear();
+            var runStart = -1;
+            for (var i = 0; i < vm.Lines.Count; i++)
+            {
+                if (vm.Lines[i].Include)
+                {
+                    if (firstIncluded < 0)
+                    {
+                        firstIncluded = i;
+                    }
+                    if (runStart < 0)
+                    {
+                        runStart = i;
+                    }
+                }
+                else
+                {
+                    if (runStart >= 0)
+                    {
+                        lineGrid.Selection.SelectRange(runStart, i - 1);
+                        runStart = -1;
+                    }
+                }
+            }
+            if (runStart >= 0)
+            {
+                lineGrid.Selection.SelectRange(runStart, vm.Lines.Count - 1);
+            }
+        }
+        finally
+        {
+            lineGrid.Selection.EndBatchUpdate();
+        }
+
+        if (firstIncluded >= 0)
+        {
+            vm.SelectedLine = vm.Lines[firstIncluded];
+        }
+
+        TableViewExtras.SyncSelectedItemsWithSelection(lineGrid);
+    }
+
     private static void PopulateGridFlyout(MenuFlyout flyout, TableView lineGrid, ReviewSpeechViewModel vm)
     {
         flyout.Items.Clear();
@@ -1154,6 +1190,7 @@ public class ReviewSpeechWindow : Window
                 {
                     r.Include = true;
                 }
+                SyncGridSelectionFromIncluded(lineGrid, vm);
             };
             flyout.Items.Add(itemCheckSelected);
 
@@ -1167,6 +1204,7 @@ public class ReviewSpeechWindow : Window
                 {
                     r.Include = false;
                 }
+                SyncGridSelectionFromIncluded(lineGrid, vm);
             };
             flyout.Items.Add(itemUncheckSelected);
 
@@ -1183,6 +1221,7 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = true;
             }
+            SyncGridSelectionFromIncluded(lineGrid, vm);
         };
         flyout.Items.Add(itemSelectAll);
 
@@ -1196,6 +1235,7 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = false;
             }
+            SyncGridSelectionFromIncluded(lineGrid, vm);
         };
         flyout.Items.Add(itemSelectNone);
 
@@ -1209,11 +1249,12 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = !line.Include;
             }
+            SyncGridSelectionFromIncluded(lineGrid, vm);
         };
         flyout.Items.Add(itemInvert);
 
         var actors = vm.Lines
-            .Select(l => l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor ?? string.Empty)
+            .Select(l => !string.IsNullOrWhiteSpace(l.Actor) ? l.Actor : (l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor ?? string.Empty))
             .Where(a => !string.IsNullOrWhiteSpace(a))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(a => a)
@@ -1233,9 +1274,10 @@ public class ReviewSpeechWindow : Window
                 {
                     foreach (var line in vm.Lines)
                     {
-                        var a = line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor;
+                        var a = !string.IsNullOrWhiteSpace(line.Actor) ? line.Actor : (line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor);
                         line.Include = string.Equals(a, targetActor, StringComparison.OrdinalIgnoreCase);
                     }
+                    SyncGridSelectionFromIncluded(lineGrid, vm);
                 };
                 flyout.Items.Add(actorItem);
             }
@@ -1265,6 +1307,7 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = true;
             }
+            SyncGridSelectionFromIncluded(vm.LineGrid, vm);
         };
         flyout.Items.Add(itemSelectAll);
 
@@ -1278,6 +1321,7 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = false;
             }
+            SyncGridSelectionFromIncluded(vm.LineGrid, vm);
         };
         flyout.Items.Add(itemSelectNone);
 
@@ -1291,11 +1335,12 @@ public class ReviewSpeechWindow : Window
             {
                 line.Include = !line.Include;
             }
+            SyncGridSelectionFromIncluded(vm.LineGrid, vm);
         };
         flyout.Items.Add(itemInvert);
 
         var actors = vm.Lines
-            .Select(l => l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor ?? string.Empty)
+            .Select(l => !string.IsNullOrWhiteSpace(l.Actor) ? l.Actor : (l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor ?? string.Empty))
             .Where(a => !string.IsNullOrWhiteSpace(a))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(a => a)
@@ -1315,9 +1360,10 @@ public class ReviewSpeechWindow : Window
                 {
                     foreach (var line in vm.Lines)
                     {
-                        var a = line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor;
+                        var a = !string.IsNullOrWhiteSpace(line.Actor) ? line.Actor : (line.StepResult?.Paragraph?.Actor ?? line.WaveformParagraph?.Actor);
                         line.Include = string.Equals(a, targetActor, StringComparison.OrdinalIgnoreCase);
                     }
+                    SyncGridSelectionFromIncluded(vm.LineGrid, vm);
                 };
                 flyout.Items.Add(actorItem);
             }

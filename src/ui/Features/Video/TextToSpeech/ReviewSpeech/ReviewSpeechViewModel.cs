@@ -79,7 +79,7 @@ public partial class ReviewSpeechViewModel : ObservableObject
     [ObservableProperty] private bool _isInstructionVoiceHintVisible;
     [ObservableProperty] private string _instruction = string.Empty;
 
-    public bool HasActors => Lines.Any(l => !string.IsNullOrWhiteSpace(l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor));
+    public bool HasActors => Lines.Any(l => !string.IsNullOrWhiteSpace(l.Actor) || !string.IsNullOrWhiteSpace(l.StepResult?.Paragraph?.Actor ?? l.WaveformParagraph?.Actor));
 
     public static bool IsDefaultVoice(Voice? voice)
     {
@@ -477,6 +477,7 @@ public partial class ReviewSpeechViewModel : ObservableObject
             {
                 Include = p.Include,
                 Number = p.Paragraph.Number,
+                Actor = p.Paragraph.Actor ?? string.Empty,
                 // The subtitle's own text, not the tag-stripped/unbroken copy that was fed to
                 // the engine: edits made here are published back to the main subtitle, so
                 // starting from the stripped copy silently dropped italics and line breaks
@@ -505,6 +506,7 @@ public partial class ReviewSpeechViewModel : ObservableObject
             {
                 Number = p.Paragraph.Number,
                 Text = p.Text,
+                Actor = p.Paragraph.Actor ?? string.Empty,
                 StartTime = TimeSpan.FromMilliseconds(p.Paragraph.StartTime.TotalMilliseconds),
                 EndTime = TimeSpan.FromMilliseconds(p.Paragraph.EndTime.TotalMilliseconds),
             };
