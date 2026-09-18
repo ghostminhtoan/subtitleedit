@@ -9,6 +9,9 @@ public partial class ReviewRow : ObservableObject
     [ObservableProperty] private bool _include;
     [ObservableProperty] private int _number;
     [ObservableProperty] private string _voice;
+    [ObservableProperty] private string _actor = string.Empty;
+    [ObservableProperty] private string _engine = string.Empty;
+    [ObservableProperty] private string _language = string.Empty;
     [ObservableProperty] private string _cps;
     [ObservableProperty] private string _speed;
     [ObservableProperty] private string _text;
@@ -35,6 +38,9 @@ public partial class ReviewRow : ObservableObject
         Include = true;
         Number = 0;
         Voice = string.Empty;
+        Actor = string.Empty;
+        Engine = string.Empty;
+        Language = string.Empty;
         Cps = string.Empty;
         Speed = string.Empty;
         Text = string.Empty;

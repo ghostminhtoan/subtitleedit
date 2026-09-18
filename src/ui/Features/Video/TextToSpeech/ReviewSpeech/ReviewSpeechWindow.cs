@@ -115,10 +115,12 @@ public class ReviewSpeechWindow : Window
         lineGrid[!TableView.ItemsSourceProperty] = new Binding(nameof(vm.Lines));
         lineGrid[!TableView.SelectedItemProperty] = new Binding(nameof(vm.SelectedLine)) { Mode = BindingMode.TwoWay };
 
+        var columnManager = new TableViewColumnManager(lineGrid);
+
         // Re-enabled: OK publishes only rows with Include ticked and Export/Import
         // round-trip the flag, so without this column an imported session's excluded
         // rows were invisible and could never be re-included.
-        lineGrid.Columns.Add(new SeTableViewColumn
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.Enabled,
             CellTheme = UiUtil.TableViewNoPaddingCellTheme,
@@ -136,7 +138,7 @@ public class ReviewSpeechWindow : Window
                 }),
             Width = new GridLength(80),
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        columnManager.Add(new SeTableViewColumn
         {
             CellTheme = UiUtil.TableViewNoPaddingCellTheme,
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
@@ -175,7 +177,7 @@ public class ReviewSpeechWindow : Window
             }),
             Width = new GridLength(150),
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.NumberSymbol,
             Binding = new Binding(nameof(ReviewRow.Number)),
@@ -183,7 +185,21 @@ public class ReviewSpeechWindow : Window
             CellTheme = UiUtil.TableViewCellTheme,
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        var colActor = new SeTableViewColumn
+        {
+            Header = Se.Language.General.Actor,
+            Binding = new Binding(nameof(ReviewRow.Actor)),
+            Width = new GridLength(100),
+            CellTheme = UiUtil.TableViewCellTheme,
+            HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
+        };
+        colActor.Bind(SeTableViewColumn.IsVisibleProperty, new Binding(nameof(vm.HasMultipleActors))
+        {
+            Mode = BindingMode.OneWay,
+            Source = vm,
+        });
+        columnManager.Add(colActor);
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.Voice,
             Binding = new Binding(nameof(ReviewRow.Voice)),
@@ -191,7 +207,35 @@ public class ReviewSpeechWindow : Window
             CellTheme = UiUtil.TableViewCellTheme,
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        var colEngine = new SeTableViewColumn
+        {
+            Header = Se.Language.General.Engine,
+            Binding = new Binding(nameof(ReviewRow.Engine)),
+            Width = new GridLength(130),
+            CellTheme = UiUtil.TableViewCellTheme,
+            HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
+        };
+        colEngine.Bind(SeTableViewColumn.IsVisibleProperty, new Binding(nameof(vm.HasMultipleActors))
+        {
+            Mode = BindingMode.OneWay,
+            Source = vm,
+        });
+        columnManager.Add(colEngine);
+        var colLanguage = new SeTableViewColumn
+        {
+            Header = Se.Language.General.Language,
+            Binding = new Binding(nameof(ReviewRow.Language)),
+            Width = new GridLength(110),
+            CellTheme = UiUtil.TableViewCellTheme,
+            HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
+        };
+        colLanguage.Bind(SeTableViewColumn.IsVisibleProperty, new Binding(nameof(vm.HasMultipleActors))
+        {
+            Mode = BindingMode.OneWay,
+            Source = vm,
+        });
+        columnManager.Add(colLanguage);
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.CharsPerSec,
             Binding = new Binding(nameof(ReviewRow.Cps)),
@@ -199,7 +243,7 @@ public class ReviewSpeechWindow : Window
             CellTheme = UiUtil.TableViewCellTheme,
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.Speed,
             Binding = new Binding(nameof(ReviewRow.Speed)),
@@ -207,7 +251,7 @@ public class ReviewSpeechWindow : Window
             CellTheme = UiUtil.TableViewCellTheme,
             HeaderTheme = UiUtil.TableViewColumnHeaderTheme,
         });
-        lineGrid.Columns.Add(new SeTableViewColumn
+        columnManager.Add(new SeTableViewColumn
         {
             Header = Se.Language.General.Text,
             Binding = new Binding(nameof(ReviewRow.Text)),

@@ -403,12 +403,15 @@ public partial class ReviewSpeechViewModel : ObservableObject
             {
                 Include = p.Include,
                 Number = p.Paragraph.Number,
+                Actor = p.Paragraph.Actor ?? string.Empty,
                 // The subtitle's own text, not the tag-stripped/unbroken copy that was fed to
                 // the engine: edits made here are published back to the main subtitle, so
                 // starting from the stripped copy silently dropped italics and line breaks
                 // from every line the user touched. Synthesis strips at the point of use.
                 Text = p.Paragraph.Text,
-                Voice = p.Voice == null ? string.Empty : p.Voice.ToString(),
+                Voice = p.Voice == null ? (voice?.ToString() ?? string.Empty) : p.Voice.ToString(),
+                Engine = !string.IsNullOrEmpty(p.EngineName) ? p.EngineName : (engine?.Name ?? string.Empty),
+                Language = !string.IsNullOrEmpty(p.Language) ? p.Language : (language?.Name ?? string.Empty),
                 Speed = Math.Round(p.SpeedFactor, 2).ToString(CultureInfo.CurrentCulture),
                 Cps = Math.Round(p.Paragraph.GetCharactersPerSecond(), 2).ToString(CultureInfo.CurrentCulture),
                 StepResult = p,
@@ -1401,10 +1404,16 @@ public partial class ReviewSpeechViewModel : ObservableObject
                 adjustSpeedStepResult.EngineName = engine.Name;
                 adjustSpeedStepResult.Model = model ?? string.Empty;
                 adjustSpeedStepResult.Instruction = instruction ?? string.Empty;
+                adjustSpeedStepResult.Language = language?.Name ?? string.Empty;
                 line.Speed = Math.Round(adjustSpeedStepResult.SpeedFactor, 2).ToString(CultureInfo.CurrentCulture);
                 line.Cps = Math.Round(adjustSpeedStepResult.Paragraph.GetCharactersPerSecond(), 2).ToString(CultureInfo.CurrentCulture);
                 line.StepResult = adjustSpeedStepResult;
                 line.Voice = voice.ToString();
+                line.Engine = engine.Name;
+                if (language != null)
+                {
+                    line.Language = language.Name;
+                }
 
                 line.AddHistory(voice, line.StepResult.CurrentFileName, engine.Name, model ?? string.Empty, instruction ?? string.Empty);
             }
@@ -1539,6 +1548,7 @@ public partial class ReviewSpeechViewModel : ObservableObject
         foreach (var row in Lines)
         {
             row.StepResult.Text = row.Text;
+            row.StepResult.Include = row.Include;
         }
 
         StepResults = Lines.Where(p => p.Include).Select(p => p.StepResult).ToArray();
@@ -2413,5 +2423,18 @@ public partial class ReviewSpeechViewModel : ObservableObject
     {
         UiUtil.RestoreWindowPosition(Window);
         RefreshWaveformPosition();
+    }
+
+    public bool HasMultipleActors
+    {
+        get
+        {
+            var distinctActors = Lines
+                .Select(l => l.Actor)
+                .Where(a => !string.IsNullOrWhiteSpace(a))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return distinctActors.Count > 1;
+        }
     }
 }
